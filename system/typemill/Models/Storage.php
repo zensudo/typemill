@@ -2,11 +2,13 @@
 
 namespace Typemill\Models;
 
+use Typemill\Static\Helpers;
+
 class Storage
 {
 	public $error 					= false;
 
-	protected $basepath 			= false;
+	private $basepath 				= false;
 
 	protected $tmpFolder 			= false;
 
@@ -28,9 +30,9 @@ class Storage
 
 	protected $settingsFolder 		= false;
 
-	protected $themeFolder 			= false;
+	protected $themesFolder 		= false;
 
-	protected $pluginFolder 		= false;
+	protected $pluginsFolder 		= false;
 
 	protected $translationFolder 	= false;
 
@@ -60,9 +62,9 @@ class Storage
 
 		$this->settingsFolder 		= $this->basepath . 'settings';
 
-		$this->pluginFolder 		= $this->basepath . 'plugins';
+		$this->pluginsFolder 		= $this->basepath . 'plugins';
 
-		$this->themeFolder 			= $this->basepath . 'themes';
+		$this->themesFolder 		= $this->basepath . 'themes';
 
 		$this->translationFolder 	= $this->basepath . 'system' .  DIRECTORY_SEPARATOR . 'typemill' . DIRECTORY_SEPARATOR . 'author' . DIRECTORY_SEPARATOR . 'translations' . DIRECTORY_SEPARATOR;
 	
@@ -76,6 +78,10 @@ class Storage
 
 	public function getFolderPath($location, $folder = NULL)
 	{
+		# security: remove ../ from location
+		# security: make sure user does not write into basepath
+		# security: write only into certain folders
+
 		if(isset($this->$location))
 		{
 			$path = rtrim($this->$location, DIRECTORY_SEPARATOR);
@@ -95,7 +101,7 @@ class Storage
 		return false;
 	}
 
-	public function checkFolder($location, $folder)
+	public function checkFolder($location, $folder = NULL)
 	{
 		$folderpath = $this->getFolderPath($location, $folder);
 
@@ -332,6 +338,11 @@ class Storage
 		return false;
 	}
 
+
+	##################
+	## 	  IMAGES 	##
+	##################
+
 	public function createUniqueImageName($filename, $extension)
 	{
 		$defaultfilename = $filename;
@@ -347,36 +358,6 @@ class Storage
 		return $filename;
 	}
 
-	public function publishFile($name)
-	{
-		$pathinfo = pathinfo($name);
-		if(!$pathinfo)
-		{
-			$this->error = 'Could not read pathinfo.';
-
-			return false;
-		}
-
-		$filename = $pathinfo['filename'] . '.' . $pathinfo['extension'];
-		$filepath = $this->tmpFolder . $filename;
-
-		if(!file_exists($this->tmpFolder . $filename))
-		{
-			$this->error = "We did not find the file in the tmp-folder or could not read it.";
-			return false;
-		}
-
-		$success = rename($this->tmpFolder . $filename, $this->fileFolder . $filename);
-		
-		if($success === true)
-		{
-			# return true;
-			return 'media/files/' . $filename;
-		}
-
-		return false;
-	}
-
 	public function publishImage($name, $noresize = false)
 	{
 		$pathinfo = pathinfo($name);
@@ -389,6 +370,12 @@ class Storage
 
 		$extension 	= isset($pathinfo['extension']) ? strtolower($pathinfo['extension']) : false;
 		$imagename 	= isset($pathinfo['filename']) ? $pathinfo['filename'] : false;
+
+		if(!$extension OR !$imagename)
+		{
+			$this->error = "Extension or name for image is missing.";
+			return false;
+		}
 
 		$imagesInTmp = glob($this->tmpFolder . "*$imagename.*"); 
 		if(empty($imagesInTmp) OR !$imagesInTmp)
@@ -489,211 +476,259 @@ class Storage
 
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-
-	public function getStorageInfoBREAK($item)
+	public function getImageList()
 	{
-		if(isset($this->$item))
+		$thumbs 		= array_diff(scandir($this->thumbsFolder), array('..', '.'));
+		$imagelist		= array();
+
+		foreach ($thumbs as $key => $name)
 		{
-			return $this->$item;
+			if (file_exists($this->liveFolder . $name))
+			{
+				$imagelist[] = [
+					'name' 		=> $name,
+					'timestamp'	=> filemtime($this->liveFolder . $name),
+					'src_thumb'	=> 'media/thumbs/' . $name,
+					'src_live'	=> 'media/live/' . $name,
+				];
+			}
 		}
+
+		$imagelist = Helpers::array_sort($imagelist, 'timestamp', SORT_DESC);
+
+		return $imagelist;
+	}
+
+	# get details from existing image for media library
+	public function getImageDetails($name)
+	{		
+		$name = basename($name);
+
+		if (!in_array($name, array(".","..")) && file_exists($this->liveFolder . $name))
+		{
+			$imageinfo 		= getimagesize($this->liveFolder . $name);
+
+			if(!$imageinfo && pathinfo($this->liveFolder . $name, PATHINFO_EXTENSION) == 'svg')
+			{
+				$imagedetails = [
+					'name' 		=> $name,
+					'timestamp'	=> filemtime($this->liveFolder . $name),
+					'bytes' 	=> filesize($this->liveFolder . $name),
+					'width'		=> '---',
+					'height'	=> '---',
+					'type'		=> 'svg',
+					'src_thumb'	=> 'media/thumbs/' . $name,
+					'src_live'	=> 'media/live/' . $name,
+				];
+			}
+			else
+			{
+				$imagedetails = [
+					'name' 		=> $name,
+					'timestamp'	=> filemtime($this->liveFolder . $name),
+					'bytes' 	=> filesize($this->liveFolder . $name),
+					'width'		=> $imageinfo[0],
+					'height'	=> $imageinfo[1],
+					'type'		=> $imageinfo['mime'],
+					'src_thumb'	=> 'media/thumbs/' . $name,
+					'src_live'	=> 'media/live/' . $name,
+				];
+			}
+
+			return $imagedetails;
+		}
+
 		return false;
 	}
 
-	public function checkFolderBREAK($folder)
+	public function deleteImage($name)
 	{
-		$folderpath = $this->basepath . $folder;
+		# validate name 
+		$name = basename($name);
 
-		if(!is_dir($folderpath) OR !is_writable($folderpath))
+		if(!file_exists($this->liveFolder . $name) OR !unlink($this->liveFolder . $name))
 		{
-			$this->error = "The folder $folder does not exist or is not writable.";
-
-			return false;
+			$this->error .= "We could not delete the live image. ";
 		}
 
-		return true;
-	}
+		if(!file_exists($this->thumbsFolder . $name) OR !unlink($this->thumbsFolder . $name))
+		{
+			$this->error .= "We could not delete the thumb image. ";
+		}
 
-	public function createFolderBREAK($folder)
-	{
-		$folderpath = $this->basepath . $folder;
+		# delete custom images (resized and grayscaled) array_map('unlink', glob("some/dir/*.txt"));
+		$pathinfo = pathinfo($name);
 
-		if(is_dir($folderpath))
+		foreach(glob($this->originalFolder . $pathinfo['filename'] . '\.*') as $image)
+		{
+			# you could check if extension is the same here
+			if(!unlink($image))
+			{
+				$this->error = "We could not delete the original image in $this->originalFolder $image. ";
+			}
+		}
+
+		foreach(glob($this->customFolder . $pathinfo['filename'] . '\-*.' . $pathinfo['extension']) as $image)
+		{
+			# you could check if extension is the same here
+			if(!unlink($image))
+			{
+				$this->error .= "we could not delete a custom image (grayscale or resized). ";
+			}
+		}
+		
+		if(!$this->error)
 		{
 			return true;
 		}
 
-		if(!mkdir($folderpath, 0755, true))
-		{
-			$this->error = "Could not create folder $folder.";
-
-			return false;
-		}
-
-		return true;
+		return false;
 	}
 
-	public function checkFileBREAK($folder, $filename)
+	##################
+	## 	  FILES 	##
+	##################
+
+	public function publishFile($name)
 	{
-		if(!file_exists($this->basepath . $folder . DIRECTORY_SEPARATOR . $filename))
+		$pathinfo = pathinfo($name);
+		if(!$pathinfo)
 		{
-			$this->error = "The file $filename in folder $folder does not exist.";
+			$this->error = 'Could not read pathinfo.';
 
 			return false;
 		}
 
-		return true;
-	}
+		$filename = $pathinfo['filename'] . '.' . $pathinfo['extension'];
+		$filepath = $this->tmpFolder . $filename;
 
-	public function writeFileBREAK($folder, $filename, $data, $method = NULL)
-	{
-		echo '<pre>';
-		var_dump($folder);
-		die();
-
-		if(!$this->checkFolder($folder))
+		if(!file_exists($this->tmpFolder . $filename))
 		{
-			if(!$this->createFolder($folder))
-			{
-				return false;
-			}
-		}
-
-		$filepath = $this->basepath . $folder . DIRECTORY_SEPARATOR . $filename;
-			
-		$openfile = @fopen($filepath, "w");
-		if(!$openfile)
-		{
-			$this->error = "Could not open and read the file $filename in folder $folder.";
-
+			$this->error = "We did not find the file in the tmp-folder or could not read it.";
 			return false;
 		}
 
-		# serialize, json_decode
-		if($method && is_callable($method))
-		{
-			$data = $method($data);
-		}
-
-		$writefile = fwrite($openfile, $data);
-		if(!$writefile)
-		{
-			$this->error = "Could not write to the file $filename in folder $folder.";
-
-			return false;
-		}
-
-		fclose($openfile);
-
-		return true;
-	}
-
-	public function getFileBREAK($folder, $filename, $method = NULL)
-	{
-		if($this->checkFile($folder, $filename))
-		{
-			# ??? should be with basepath???
-			$fileContent = file_get_contents($folder . DIRECTORY_SEPARATOR . $filename);
+		$success = rename($this->tmpFolder . $filename, $this->fileFolder . $filename);
 		
-			# use unserialise or json_decode
-			if($method && is_callable($method))
-			{
-				$fileContent = $method($fileContent);
-			}
-
-			return $fileContent;
+		if($success === true)
+		{
+			# return true;
+			return 'media/files/' . $filename;
 		}
 
 		return false;
 	}
 
-	public function renameFileBREAK($folder, $oldname, $newname)
+	public function getFileList()
 	{
-		$oldFilePath = $this->basepath . $folder . DIRECTORY_SEPARATOR . $oldname;
-		$newFilePath = $this->basepath . $folder . DIRECTORY_SEPARATOR . $newname;
+		$files 		= scandir($this->fileFolder);
+		$filelist	= array();
 
-		if(!file_exists($oldFilePath))
+		foreach ($files as $key => $name)
 		{
-			return false;
+			if (!in_array($name, array(".","..","filerestrictions.yaml")) && file_exists($this->fileFolder . $name))
+			{
+				$filelist[] = [
+					'name' 		=> $name,
+					'timestamp'	=> filemtime($this->fileFolder . $name),
+					'bytes' 	=> filesize($this->fileFolder . $name),					
+					'info'		=> pathinfo($this->fileFolder . $name),
+					'url'		=> 'media/files/' . $name,
+				];
+			}
 		}
 
-		if(!rename($oldFilePath, $newFilePath))
-		{
-			return false;
-		}
-		
-		return true;
+		$filelist = Helpers::array_sort($filelist, 'timestamp', SORT_DESC);
+
+		return $filelist;
 	}
 
-	public function deleteFileBREAK($folder, $filename)
+	public function deleteMediaFile($name)
 	{
-		if($this->checkFile($folder, $filename))
-		{
-			if(unlink($this->basepath . $folder . DIRECTORY_SEPARATOR . $filename))
-			{
-				return true;
-			}
+		# validate name 
+		$name = basename($name);
 
-			$this->error = "We found the file but could not delete $filename";
+		if(file_exists($this->fileFolder . $name) && unlink($this->fileFolder . $name))
+		{
+			return true;
 		}
 
 		return false;
 	}
 
-	# used to sort the navigation / files 
-	public function moveContentFileBREAK($item, $folderPath, $index, $date = null)
+	public function deleteFileWithName($name)
 	{
+		# e.g. delete $name = 'logo';
+
+		$name = basename($name);
+
+		if($name != '' && !in_array($name, array(".","..")))
+		{
+			foreach(glob($this->fileFolder . $name) as $file)
+			{
+				unlink($file);
+			}
+		}
+	}
+
+	##################
+	## 	 POST PAGES	##
+	##################
+
+	public function transformPagesToPosts($folder)
+	{		
 		$filetypes			= array('md', 'txt', 'yaml');
-		
-		# set new order as string
-		$newOrder			= ($index < 10) ? '0' . $index : $index;
+		$result 			= true;
 
-		$newPath 			= $this->contentFolder . $folderPath . DIRECTORY_SEPARATOR . $newOrder . '-' . $item->slug;
-
-		if($item->elementType == 'folder')
+		foreach($folder->folderContent as $page)
 		{
-			$oldPath = $this->contentFolder . $item->path;
+			# create old filename without filetype
+			$oldFile 	= $this->contentFolder . $page->pathWithoutType;
 
-			if(@rename($oldPath, $newPath))
-			{
-				return true;
-			}
-			return false;
-		}
-		
-		# create old path but without filetype
-		$oldPath		= substr($item->path, 0, strpos($item->path, "."));
-		$oldPath		= $this->contentFolder . $oldPath;
+			# set default date
+			$date 		= date('Y-m-d', time());
+			$time		= date('H-i', time());
 
-		$result 		= true;
-		
-		foreach($filetypes as $filetype)
-		{
-			$oldFilePath = $oldPath . '.' . $filetype;
-			$newFilePath = $newPath . '.' . $filetype;
-			
-			#check if file with filetype exists and rename
-			if($oldFilePath != $newFilePath && file_exists($oldFilePath))
+			$meta 		= $this->getYaml('contentFolder', '', $page->pathWithoutType . '.yaml');
+
+			if($meta)
 			{
-				if(@rename($oldFilePath, $newFilePath))
+				# get dates from meta
+				if(isset($meta['meta']['manualdate'])){ $date = $meta['meta']['manualdate']; }
+				elseif(isset($meta['meta']['created'])){ $date = $meta['meta']['created']; }
+				elseif(isset($meta['meta']['modified'])){ $date = $meta['meta']['modified']; }
+
+				# set time
+				if(isset($meta['meta']['time']))
 				{
-					$result = $result;
+					$time = $meta['meta']['time'];
 				}
-				else
+			}
+
+			$datetime 	= $date . '-' . $time;
+			$datetime 	= implode(explode('-', $datetime));
+			$datetime	= substr($datetime,0,12);
+
+			# create new file-name without filetype
+			$newFile 	= $this->contentFolder . $folder->path . DIRECTORY_SEPARATOR . $datetime . '-' . $page->slug;
+
+			foreach($filetypes as $filetype)
+			{
+				$oldFilePath = $oldFile . '.' . $filetype;
+				$newFilePath = $newFile . '.' . $filetype;
+							
+				#check if file with filetype exists and rename
+				if($oldFilePath != $newFilePath && file_exists($oldFilePath))
 				{
-					$result = false;
+					if(@rename($oldFilePath, $newFilePath))
+					{
+						$result = $result;
+					}
+					else
+					{
+						$this->error = "could not rename $oldFilePath to $newFilePath";
+						$result = false;
+					}
 				}
 			}
 		}
@@ -701,132 +736,50 @@ class Storage
 		return $result;
 	}
 
-
-
-
-
-
-
-
-
-	public function checkPath($folder)
+	public function transformPostsToPages($folder)
 	{
-		$folderPath = $this->basepath . $folder;
+		$filetypes			= array('md', 'txt', 'yaml');
+		$index				= 0;
+		$result 			= true;
 
-		if(!is_dir($folderPath))
+		foreach($folder->folderContent as $page)
 		{
-			if(@mkdir($folderPath, 0774, true))
+			# create old filename without filetype
+			$oldFile 	= $this->contentFolder . $page->pathWithoutType;
+
+			$order 		= $index;
+
+			if($index < 10)
 			{
-				return true;
+				$order = '0' . $index;
 			}
-			else
+
+			# create new file-name without filetype
+			$newFile 	= $this->contentFolder . $folder->path . DIRECTORY_SEPARATOR . $order . '-' . $page->slug;
+
+			foreach($filetypes as $filetype)
 			{
-				throw new \Exception("The folder '{$folderPath}' is missing and we could not create it. Please create the folder manually on your server.");
-#				return false;				
+				$oldFilePath = $oldFile . '.' . $filetype;
+				$newFilePath = $newFile . '.' . $filetype;
+				
+				#check if file with filetype exists and rename
+				if($oldFilePath != $newFilePath && file_exists($oldFilePath))
+				{
+					if(@rename($oldFilePath, $newFilePath))
+					{
+						$result = $result;
+					}
+					else
+					{
+						$this->error = "could not rename $oldFilePath to $newFilePath";
+						$result = false;
+					}
+				}
 			}
+
+			$index++;
 		}
-		
-		if(@is_writable($folderPath))
-		{
-			return true;
-		}
-		else
-		{
-			throw new \Exception("Please make the folder '{$folderPath}' writable.");
-#			return false;
-		}
-		return true;
+
+		return $result;
 	}
-
-/*
-	
-	public function checkFile($folder, $file)
-	{
-		if(!file_exists($this->basePath . $folder . DIRECTORY_SEPARATOR . $file))
-		{
-			return false;
-		}
-		return true;
-	}
-
-	public function checkFileWithPath($filepath)
-	{
-		if(!file_exists($this->basePath . $filepath))
-		{
-			return false;
-		}
-		return true;
-	}
-
-	public function writeFile($folder, $file, $data)
-	{
-		if($this->checkPath($folder))
-		{			
-			$filePath 	= $this->basePath . $folder . DIRECTORY_SEPARATOR . $file;
-			
-			$openFile 	= @fopen($filePath, "w");
-			
-			if(!$openFile)
-			{
-				return false;
-			}			
-			
-			fwrite($openFile, $data);
-			fclose($openFile);
-
-			return true;
-		}
-		return false;
-	}
-
-	public function getFile($folderName, $fileName)
-	{
-		if($this->checkFile($folderName, $fileName))
-		{
-			$fileContent = file_get_contents($folderName . DIRECTORY_SEPARATOR . $fileName);
-			return $fileContent;
-		}
-		return false;
-	}
-
-	public function getFileWithPath($filepath)
-	{
-		if($this->checkFileWithPath($filepath))
-		{
-			$fileContent = file_get_contents($filepath);
-			return $fileContent;
-		}
-		return false;
-	}
-
-	public function deleteFileWithPath($filepath)
-	{
-		if($this->checkFileWithPath($filepath))
-		{
-			unlink($this->basePath . $filepath);
-			return true;
-		}
-		return false;
-	}
-
-	public function renameFile($folder, $oldname, $newname)
-	{
-
-		$oldFilePath = $this->basePath . $folder . DIRECTORY_SEPARATOR . $oldname;
-		$newFilePath = $this->basePath . $folder . DIRECTORY_SEPARATOR . $newname;
-
-		if(!file_exists($oldFilePath))
-		{
-			return false;
-		}
-
-		if(@rename($oldFilePath, $newFilePath))
-		{
-			return true;
-		}
-		
-		return false;
-	}
-	
-	*/
 }

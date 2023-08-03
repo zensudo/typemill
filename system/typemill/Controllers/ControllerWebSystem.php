@@ -6,7 +6,7 @@ use Typemill\Models\Navigation;
 use Typemill\Models\Extension;
 use Typemill\Models\User;
 use Typemill\Models\License;
-use Typemill\Static\Settings;
+use Typemill\Models\Settings;
 
 class ControllerWebSystem extends Controller
 {	
@@ -23,10 +23,13 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher')
 								);
 
-		$systemfields 		= Settings::getSettingsDefinitions();
+		$settingsModel 		= new Settings();
+		$systemfields 		= $settingsModel->getSettingsDefinitions();
+		$systemfields 		= $this->addDatasets($systemfields);
 
 		# add full url for sitemap to settings
 		$this->settings['sitemap'] = $this->c->get('urlinfo')['baseurl'] . '/cache/sitemap.xml';
@@ -59,7 +62,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher')
 								);
 
 		$extension 			= new Extension();
@@ -110,7 +114,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 		$extension 			= new Extension();
@@ -160,7 +165,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 		$license 		= new License();
@@ -199,7 +205,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 		$username			= $request->getAttribute('c_username');
@@ -236,7 +243,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 		$user				= new User();
@@ -279,7 +287,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 		$user				= new User();
@@ -320,7 +329,8 @@ class ControllerWebSystem extends Controller
 		$systemNavigation	= $navigation->getSystemNavigation(
 									$userrole 	= $request->getAttribute('c_userrole'),
 									$acl 		= $this->c->get('acl'),
-									$urlinfo 	= $this->c->get('urlinfo')
+									$urlinfo 	= $this->c->get('urlinfo'),
+									$dispatcher = $this->c->get('dispatcher'),
 								);
 
 	    return $this->c->get('view')->render($response, 'system/usernew.twig', [

@@ -6,7 +6,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\ResponseInterface as Response;
 use Typemill\Models\Validation;
 use Typemill\Models\Extension;
-use Typemill\Static\Settings;
+use Typemill\Models\Settings;
 
 class ControllerApiSystemThemes extends Controller
 {
@@ -18,11 +18,12 @@ class ControllerApiSystemThemes extends Controller
 
 		$extension 			= new Extension();
 		$formdefinitions 	= $extension->getThemeDefinition($themename);
+		$formdefinitions 	= $this->addDatasets($formdefinitions['forms']['fields']);		
 		$themedata 			= [];
 
 		# validate input
 		$validator 			= new Validation();
-		$validatedOutput 	= $this->recursiveValidation($validator, $formdefinitions['forms']['fields'], $themeinput);
+		$validatedOutput 	= $this->recursiveValidation($validator, $formdefinitions, $themeinput);
 		if(!empty($this->errors))
 		{
 			$response->getBody()->write(json_encode([
@@ -36,7 +37,8 @@ class ControllerApiSystemThemes extends Controller
 		$themedata['themes'][$themename] = $validatedOutput;
 
 		# store updated settings here
-		$updatedSettings = Settings::updateSettings($themedata);
+		$settings 			= new Settings();
+		$updatedSettings 	= $settings->updateSettings($themedata);
 
 		$response->getBody()->write(json_encode([
 			'message' => 'settings have been saved',

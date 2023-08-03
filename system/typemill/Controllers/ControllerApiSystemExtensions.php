@@ -7,7 +7,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Typemill\Models\Validation;
 use Typemill\Models\License;
 use Typemill\Models\Extension;
-use Typemill\Static\Settings;
+use Typemill\Models\Settings;
 
 class ControllerApiSystemExtensions extends Controller
 {
@@ -70,8 +70,8 @@ class ControllerApiSystemExtensions extends Controller
 		$objectdata = [];
 		if($params['type'] == 'plugins')
 		{
-			$objectdata[$params['type']][$params['name']] = $this->settings[$params['type']][$params['name']];
-			$objectdata[$params['type']][$params['name']]['active'] = $params['checked'];
+			$objectdata['plugins'][$params['name']] = $this->settings[$params['type']][$params['name']];
+			$objectdata['plugins'][$params['name']]['active'] = $params['checked'];
 		}
 		elseif($params['type'] == 'themes')
 		{
@@ -79,7 +79,8 @@ class ControllerApiSystemExtensions extends Controller
 		}
 
 		# store updated settings here
-		$updatedSettings = Settings::updateSettings($objectdata);
+		$settings 			= new Settings();
+		$updatedSettings 	= $settings->updateSettings($objectdata);
 
 		$response->getBody()->write(json_encode([
 			'message' => 'settings have been saved'

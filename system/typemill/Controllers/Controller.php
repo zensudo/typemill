@@ -7,13 +7,6 @@ use Slim\Routing\RouteContext;
 use Typemill\Models\StorageWrapper;
 use Typemill\Events\OnTwigLoaded;
 
-# use Psr\Container\ContainerInterface;
-# use Typemill\Models\Folder;
-# use Typemill\Models\WriteCache;
-# use Typemill\Models\WriteYaml;
-# use Typemill\Events\OnPageReady;
-# use Typemill\Events\OnPagetreeLoaded;
-
 abstract class Controller
 {
 	# holds the container
@@ -31,8 +24,6 @@ abstract class Controller
 		$this->settings 	= $container->get('settings');
 
 		$this->routeParser 	= $container->get('routeParser');
-
-#		$this->csrf 		= $container->get('csrf');
 
 		$this->c->get('dispatcher')->dispatch(new OnTwigLoaded(false), 'onTwigLoaded');		
 	}
@@ -103,7 +94,7 @@ abstract class Controller
 	}
 
 	protected function addDatasets(array $formDefinitions)
-	{
+	{		
 		foreach($formDefinitions as $fieldname => $field)
 		{
 			if(isset($field['type']) && $field['type'] == 'fieldset')
@@ -111,15 +102,25 @@ abstract class Controller
 				$formDefinitions[$fieldname]['fields'] = $this->addDatasets($field['fields']);
 			}
 
-			if(isset($field['type']) && ($field['type'] == 'select' ) && isset($field['dataset']) && ($field['dataset'] == 'userroles' ) )
+			if(isset($field['type']) && ($field['type'] == 'select' ) )
 			{
-				$userroles = [null => null];
-				foreach($this->c->get('acl')->getRoles() as $userrole)
+				# always add null as first option in selectboxes.
+				$options = [null => null];
+				
+				if(isset($field['options']) && is_array($field['options']))
 				{
-					$userroles[$userrole] = $userrole;
+					$options = array_merge($options, $field['options']);
 				}
 
-				$formDefinitions[$fieldname]['options'] = $userroles;
+				if(isset($field['dataset']) && ($field['dataset'] == 'userroles' ))
+				{
+					foreach($this->c->get('acl')->getRoles() as $userrole)
+					{
+						$options[$userrole] = $userrole;
+					}
+				}
+
+				$formDefinitions[$fieldname]['options'] = $options;
 			}
 		}
 
@@ -179,6 +180,12 @@ abstract class Controller
 			if(isset($input[$fieldname]))
 			{
 				$fieldvalue = $input[$fieldname];
+
+				# fix false or null values for selectboxes
+				if($fielddefinitions['type'] == "select" && ($fieldvalue === 'NULL' OR $fieldvalue === false))
+				{ 
+					$fieldvalue = NULL; 
+				}
 
 				$validationresult = $validator->field($fieldname, $fieldvalue, $fielddefinitions);
 

@@ -6,7 +6,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\ResponseInterface as Response;
 use Typemill\Models\Validation;
 use Typemill\Models\Extension;
-use Typemill\Static\Settings;
+use Typemill\Models\Settings;
 
 class ControllerApiSystemPlugins extends Controller
 {
@@ -18,11 +18,12 @@ class ControllerApiSystemPlugins extends Controller
 
 		$extension 			= new Extension();
 		$formdefinitions 	= $extension->getPluginDefinition($pluginname);
+		$formdefinitions 	= $this->addDatasets($formdefinitions['forms']['fields']);
 		$plugindata 		= [];
 
 		# validate input
 		$validator 			= new Validation();
-		$validatedOutput 	= $this->recursiveValidation($validator, $formdefinitions['forms']['fields'], $plugininput);
+		$validatedOutput 	= $this->recursiveValidation($validator, $formdefinitions, $plugininput);
 		if(!empty($this->errors))
 		{
 			$response->getBody()->write(json_encode([
@@ -43,7 +44,8 @@ class ControllerApiSystemPlugins extends Controller
 		$plugindata['plugins'][$pluginname] = $validatedOutput;
 
 		# store updated settings here
-		$updatedSettings = Settings::updateSettings($plugindata);
+		$settings 			= new Settings();
+		$updatedSettings 	= $settings->updateSettings($plugindata);
 
 		$response->getBody()->write(json_encode([
 			'message' => 'settings have been saved'

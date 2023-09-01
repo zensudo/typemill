@@ -8,6 +8,7 @@ use Slim\Views\TwigMiddleware;
 use Slim\Psr7\Factory\UriFactory;
 use Twig\Extension\DebugExtension;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use RKA\Middleware\ProxyDetection;
 use Typemill\Assets;
 use Typemill\Models\Settings;
 use Typemill\Models\License;
@@ -31,6 +32,8 @@ use Typemill\Extensions\TwigUrlExtension;
 use Typemill\Extensions\TwigUserExtension;
 use Typemill\Extensions\TwigLanguageExtension;
 use Typemill\Extensions\TwigMarkdownExtension;
+use Typemill\Extensions\TwigMetaExtension;
+use Typemill\Extensions\TwigCaptchaExtension;
 
 $timer = [];
 $timer['start'] = microtime(true);
@@ -300,6 +303,8 @@ $container->set('view', function() use ($settings, $csrf, $urlinfo, $translation
 	$twig->addExtension(new TwigUrlExtension($urlinfo));
 	$twig->addExtension(new TwigLanguageExtension( $translations ));
 	$twig->addExtension(new TwigMarkdownExtension());
+	$twig->addExtension(new TwigMetaExtension());
+	$twig->addExtension(new TwigCaptchaExtension());
 
 	# start csrf only if session is active
 	/*
@@ -358,7 +363,15 @@ $app->add($errorMiddleware);
 
 $app->add(new SessionMiddleware($session_segments, $urlinfo['route']));
 
+if(isset($settings['proxy']) && $settings['proxy'])
+{
+	$trustedProxies = ( isset($settings['trustedproxies']) && !empty($settings['trustedproxies']) ) ? explode(",", $settings['trustedproxies']) : [];
+	$app->add(new ProxyDetection($trustedProxies));	
+}
+
+
 $timer['middleware'] = microtime(true);
+
 
 /************************
 *   ADD ROUTES          *

@@ -9,10 +9,10 @@ class Content
 {
 	private $storage;
 
-	public function __construct($baseurl = NULL)
+	public function __construct($baseurl = NULL, $settings = NULL, $dispatcher = NULL)
 	{
 		$this->storage 				= new StorageWrapper('\Typemill\Models\Storage');
-		$this->parsedown 			= new ParsedownExtension($baseurl);
+		$this->parsedown 			= new ParsedownExtension($baseurl, $settings, $dispatcher);
 	}
 
 	public function getDraftMarkdown($item)
@@ -117,18 +117,98 @@ class Content
 	{
 		$extensions = ['.md', '.txt', '.yaml'];
 
-		$result = true;
 		foreach($extensions as $extension)
 		{
 			$result = $this->storage->deleteFile('contentFolder', '', $item->pathWithoutType . $extension);
 		}
 
-		if($result)
+		if($result !== true)
 		{
-			return true;
+			return $this->storage->getError();
+		}
+		
+		return true;
+	}
+
+	public function deleteFolder($item, $result = true)
+	{
+		if($item->elementType == 'folder' && isset($item->folderContent) && is_array($item->folderContent) && !empty($item->folderContent))
+		{
+			if($this->hasPublishedItems($item))
+			{
+				return 'The folder contains published pages. Please unpublish or delete them first.';
+			}
+
+			foreach($item->folderContent as $subitem)
+			{
+				if($subitem->elementType == 'folder')
+				{
+					$result = $this->deleteFolder($subitem);
+				}
+				else
+				{
+					$result = $this->deletePage($subitem);
+				}
+
+				if($result !== true)
+				{ 
+					return $result; 
+				}
+			}
+
+			$result = $this->deletePage($item);
+
+			if($result !== true)
+			{
+				return $result;
+			}
+
+			$result = $this->storage->deleteContentFolder($item->path);
+
+			if($result !== true)
+			{
+				return $this->storage->getError();
+			}
 		}
 
-		return $this->storage->getError();
+		$result = $this->deletePage($item);
+
+		if($result !== true)
+		{
+			return $result;
+		}
+
+		$result = $this->storage->deleteContentFolder($item->path);
+
+		if($result !== true)
+		{
+			return $this->storage->getError();
+		}
+
+		return true;
+	}
+
+	private function hasPublishedItems($folder, $published = false)
+	{
+		$published = false;
+
+		if(isset($folder->folderContent) && is_array($folder->folderContent) && !empty($folder->folderContent))
+		{
+			foreach($folder->folderContent as $item)
+			{
+				if($item->status == 'published')
+				{
+					return true;
+				}
+
+				if($item->elementType == 'folder')
+				{
+					$published = $this->hasPublishedItems($item);
+				}
+			}
+		}
+
+		return $published;
 	}
 
 	public function addDraftHtml($markdownArray)

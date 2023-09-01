@@ -3,9 +3,11 @@
 namespace Typemill;
 
 use \Symfony\Component\EventDispatcher\EventSubscriberInterface;
-# use Typemill\Models\Fields;
-# use Typemill\Models\WriteYaml;
+use DI\Container;
+use Typemill\Models\StorageWrapper;
+use Typemill\Models\Extension;
 use Typemill\Models\Validation;
+use Typemill\Models\Fields;
 use Typemill\Extensions\ParsedownExtension;
 
 abstract class Plugin implements EventSubscriberInterface
@@ -18,9 +20,9 @@ abstract class Plugin implements EventSubscriberInterface
 
 	protected $editorroute = false;
 
-	
-	public function __construct($container)
+	public function __construct(Container $container)
 	{
+
 		$this->container 	= $container;
 		$this->urlinfo 		= $this->container->get('urlinfo');
 		$this->route  		= $this->urlinfo['route'];
@@ -42,9 +44,110 @@ abstract class Plugin implements EventSubscriberInterface
 		return $this->container->get('settings');
 	}
 	
-	protected function getPluginSettings($plugin)
+	protected function getPluginSettings($pluginname = false)
 	{
-		return $this->container->get('settings')['plugins'][$plugin];
+#		$pluginClass = debug_backtrace(!DEBUG_BACKTRACE_PROVIDE_OBJECT|DEBUG_BACKTRACE_IGNORE_ARGS,2)[1]['class'];
+
+		$pluginname = $this->getPluginName($pluginname);
+
+		if($pluginname && isset($this->container->get('settings')['plugins'][$pluginname]))
+		{
+			return $this->container->get('settings')['plugins'][$pluginname];
+		}
+
+		return false;
+	}
+
+	protected function getPluginData($filename, $pluginname = false)
+	{
+		$pluginname 	= $this->getPluginName($pluginname);
+
+		$storageClass 	= $this->container->get('settings')['storage'];
+		$storage 		= new StorageWrapper($storageClass);
+		
+		$data 			= $storage->getFile('dataFolder', $pluginname, $filename);
+
+		return $data;
+	}
+
+	protected function getPluginYamlData($filename, $pluginname = false)
+	{
+		$pluginname 	= $this->getPluginName($pluginname);
+
+		$storageClass 	= $this->container->get('settings')['storage'];
+		$storage 		= new StorageWrapper($storageClass);
+		
+		$data 			= $storage->getYaml('dataFolder', $pluginname, $filename);
+
+		return $data;
+	}
+
+	protected function storePluginData($filename, $pluginname = false)
+	{
+		$pluginname 	= $this->getPluginName($pluginname);
+
+		$storageClass 	= $this->container->get('settings')['storage'];
+		$storage 		= new StorageWrapper($storageClass);
+		
+		$result 		= $storage->writeFile('dataFolder', $pluginname, $filename);
+
+		if($result)
+		{
+			return true;
+		}
+
+		return $storage->getError();
+	}
+
+	protected function storePluginYamlData(string $filename, array $data, $pluginname = false)
+	{
+		$pluginname 	= $this->getPluginName($pluginname);
+
+		# validation
+		$extension 			= new Extension();
+		$pluginDefinitions 	= $extension->getPluginDefinition($pluginname);
+		$formDefinitions 	= $pluginDefinitions['system']['fields'] ?? false;
+
+		if($formDefinitions)
+		{
+# where can we add this method so we can use it everywhere?
+#			$formdefinitions 	= $this->addDatasets($formdefinitions);
+	
+			$validate = new Validation();
+
+			$validatedOutput = $validate->recursiveValidation($formDefinitions, $data);
+			if(!empty($validate->errors))
+			{
+				return $validate->errors;
+			}
+		}
+
+		$storageClass 	= $this->container->get('settings')['storage'];
+		$storage 		= new StorageWrapper($storageClass);
+		
+		$result 		= $storage->updateYaml('dataFolder', $pluginname, $filename, $data);
+
+		if($result)
+		{
+			return true;
+		}
+
+		return $storage->getError();
+	}
+
+	private function getPluginName($pluginname)
+	{
+		if(!$pluginname)
+		{
+			$classname = get_called_class();
+			
+			if ($pos = strrpos($classname, '\\'))
+			{
+				$pluginname = strtolower(substr($classname, $pos + 1));
+			}
+		}
+
+		return $pluginname;
 	}
 
 	protected function urlinfo()
@@ -84,10 +187,22 @@ abstract class Plugin implements EventSubscriberInterface
 		$this->container->get('assets')->addJS($JS);
 	}
 
+/*
 	protected function addEditorJS($JS)
 	{
 		$this->container->get('assets')->addEditorJS($JS);
 	}
+
+	protected function addEditorInlineJS($JS)
+	{
+		$this->container->get('assets')->addEditorInlineJS($JS);
+	}
+
+	protected function addEditorCSS($CSS)
+	{
+		$this->container->get('assets')->addEditorCSS($CSS);
+	}
+*/
 
 	protected function addInlineJS($JS)
 	{
@@ -98,11 +213,6 @@ abstract class Plugin implements EventSubscriberInterface
 	{
 		$this->container->get('assets')->addSvgSymbol($symbol);
 	}
-
-	protected function addEditorInlineJS($JS)
-	{
-		$this->container->get('assets')->addEditorInlineJS($JS);
-	}
 	
 	protected function addCSS($CSS)
 	{
@@ -112,11 +222,6 @@ abstract class Plugin implements EventSubscriberInterface
 	protected function addInlineCSS($CSS)
 	{
 		$this->container->get('assets')->addInlineCSS($CSS);		
-	}
-
-	protected function addEditorCSS($CSS)
-	{
-		$this->container->get('assets')->addEditorCSS($CSS);
 	}
 
 	protected function getMeta()
@@ -172,23 +277,27 @@ abstract class Plugin implements EventSubscriberInterface
 		return false;
 	}
 	
-	protected function generateForm($pluginName, $routename)
+	protected function generateForm($routename, $pluginname = NULL)
 	{
-		$fieldsModel 		= new Fields();
-		
-		$settings 			= $this->getSettings();
 		$form 				= false;
 
-		$pluginDefinitions 	= \Typemill\Settings::getObjectSettings('plugins', $pluginName);
-		if(isset($settings['plugins'][$pluginName]['publicformdefinitions']) && $settings['plugins'][$pluginName]['publicformdefinitions'] != '')
+		$fieldsModel 		= new Fields();
+		$extensionModel 	= new Extension();
+		
+		$pluginSettings 	= $this->getPluginSettings();
+		$pluginName 		= $this->getPluginName($pluginname);
+		$pluginDefinitions 	= $extensionModel->getPluginDefinition($pluginName);
+
+		# add field-definitions entered into author interface
+		if(isset($pluginSettings['publicformdefinitions']) && $pluginSettings['publicformdefinitions'] != '')
 		{
-			$arrayFromYaml = \Symfony\Component\Yaml\Yaml::parse($settings['plugins'][$pluginName]['publicformdefinitions']);
+			$arrayFromYaml = \Symfony\Component\Yaml\Yaml::parse($pluginSettings['publicformdefinitions']);
 			$pluginDefinitions['public']['fields'] = $arrayFromYaml;
 		}
 
-		$buttonlabel		= isset($settings['plugins'][$pluginName]['button_label']) ? $settings['plugins'][$pluginName]['button_label'] : false;
-		$captchaoptions		= isset($settings['plugins'][$pluginName]['captchaoptions']) ? $settings['plugins'][$pluginName]['captchaoptions'] : false;
-		$recaptcha			= isset($settings['plugins'][$pluginName]['recaptcha']) ? $settings['plugins'][$pluginName]['recaptcha_webkey'] : false;
+		$buttonlabel		= isset($pluginSettings['button_label']) ? $pluginSettings['button_label'] : false;
+		$captchaoptions		= isset($pluginSettings['captchaoptions']) ? $pluginSettings['captchaoptions'] : false;
+		$recaptcha			= isset($pluginSettings['recaptcha']) ? $pluginSettings['recaptcha_webkey'] : false;
 
 		if($captchaoptions == 'disabled')
 		{
@@ -199,7 +308,9 @@ abstract class Plugin implements EventSubscriberInterface
 		$fieldsModel = new Fields();
 
 		if(isset($pluginDefinitions['public']['fields']))
-		{			
+		{
+			$settings = $this->container->get('settings');
+
 			# get all the fields and prefill them with the dafault-data, the user-data or old input data
 			$fields = $fieldsModel->getFields($settings, 'plugins', $pluginName, $pluginDefinitions, 'public');
 
@@ -217,7 +328,7 @@ abstract class Plugin implements EventSubscriberInterface
 				'recaptcha_webkey' 	=> $recaptcha, 
 			]);
 		}
-		
+
 		return $form;
 	}
 

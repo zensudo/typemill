@@ -37,6 +37,10 @@ class Storage
 	protected $translationFolder 	= false;
 
 	protected $systemSettings 		= false;
+
+	protected $isReadable 			= [];
+
+	protected $isWrtiable 			= [];
  
 	public function __construct()
 	{
@@ -69,6 +73,19 @@ class Storage
 		$this->translationFolder 	= $this->basepath . 'system' .  DIRECTORY_SEPARATOR . 'typemill' . DIRECTORY_SEPARATOR . 'author' . DIRECTORY_SEPARATOR . 'translations' . DIRECTORY_SEPARATOR;
 	
 		$this->systemSettings 		= $this->basepath . 'system' .  DIRECTORY_SEPARATOR . 'typemill' .  DIRECTORY_SEPARATOR . 'settings';
+	
+		$this->isWritable 			= [
+										'tmpFolder' 		=> true, 
+										'originalFolder'	=> true, 
+										'liveFolder'		=> true, 
+										'thumbsFolder'		=> true, 
+										'customFolder'		=> true, 
+										'fileFolder'		=> true, 
+										'contentFolder' 	=> true,
+										'dataFolder'		=> true, 
+										'cacheFolder' 		=> true, 
+										'settingsFolder'	=> true
+									];
 	}
 
 	public function getError()
@@ -78,26 +95,31 @@ class Storage
 
 	public function getFolderPath($location, $folder = NULL)
 	{
-		# security: remove ../ from location
-		# security: make sure user does not write into basepath
-		# security: write only into certain folders
-
 		if(isset($this->$location))
 		{
 			$path = rtrim($this->$location, DIRECTORY_SEPARATOR);
 			$path .= DIRECTORY_SEPARATOR;
-			if($folder && $folder != '')
+
+			# check if folder is no hack like "../"
+			if($folder && $folder != '' && preg_match('/^(?:[\/\\a-z0-9_-]|\.(?!\.))+$/iD', $folder))
 			{
 				$folder = trim($folder, DIRECTORY_SEPARATOR);
 				$path .= $folder . DIRECTORY_SEPARATOR; 
 			}
-#			echo '<pre>';
-#			echo $path;
+			elseif($location == 'basepath')
+			{
+				# do not allow direct access to basepath files
+
+				$this->error = "Access to basepath is not allowed.";
+				
+				return false;
+			}
 
 			return $path;
 		}
 
 		$this->error = "We could not find a folderPath for $location";
+		
 		return false;
 	}
 
@@ -134,6 +156,53 @@ class Storage
 		return true;
 	}
 
+	public function deleteFolder($location, $folder, $filename)
+	{
+		if(!isset($this->isWritable[$location]))
+		{
+			$this->error = "It is not allowed to write into $location";
+
+			return false;
+		}
+
+		$filepath = $this->getFolderPath($location, $folder) . $filename;
+
+		if(is_dir($filepath))
+		{
+			if(rmdir($dir))
+			{
+				return true;
+			}
+
+			$this->error = "We found the folder but could not delete $filepath";
+
+			return false;
+		}
+		
+		$this->error = "The path $filepath is not a folder.";
+
+		return false;
+	}
+
+	public function deleteContentFolder($filepath)
+	{
+		$filepath = $this->getFolderPath('contentFolder') . $filepath;
+
+		if(is_dir($filepath))
+		{
+			if(rmdir($filepath))
+			{
+				return true;
+			}
+
+			$this->error = "We found the folder but could not delete $filepath";
+
+			return false;
+		}
+
+		return true;
+	}
+
 	public function checkFile($location, $folder, $filename)
 	{
 		$filepath = $this->getFolderPath($location, $folder) . $filename;
@@ -152,7 +221,7 @@ class Storage
 	{
 		if($this->checkFile($location, $folder, $filename))
 		{
-			$filepath = $this->getFolderPath($location) . $folder . DIRECTORY_SEPARATOR . $filename;
+			$filepath = $this->getFolderPath($location, $folder) . $filename;
 
 			$fileContent = file_get_contents($filepath);
 		
@@ -184,6 +253,13 @@ class Storage
 
 	public function writeFile($location, $folder, $filename, $data, $method = NULL)
 	{
+		if(!isset($this->isWritable[$location]))
+		{
+			$this->error = "It is not allowed to write into $location";
+
+			return false;
+		}
+
 		# CLEAN EVERYTHING UP FUNCTION
 		$folder 	= trim($folder, DIRECTORY_SEPARATOR);
 		$folder 	= ($folder == '') ? '' : $folder . DIRECTORY_SEPARATOR;
@@ -197,8 +273,8 @@ class Storage
 			}
 		}
 
-		$filepath = $this->getFolderPath($location) . $folder . $filename;
-			
+		$filepath = $this->getFolderPath($location, $folder) . $filename;
+
 		$openfile = @fopen($filepath, "w");
 		if(!$openfile)
 		{
@@ -228,6 +304,13 @@ class Storage
 
 	public function renameFile($location, $folder, $oldname, $newname)
 	{
+		if(!isset($this->isWritable[$location]))
+		{
+			$this->error = "It is not allowed to write into $location";
+
+			return false;
+		}
+
 		$folder = trim($folder, DIRECTORY_SEPARATOR);
 
 		$oldFilePath = $this->getFolderPath($location) . $folder . DIRECTORY_SEPARATOR . $oldname;
@@ -251,19 +334,31 @@ class Storage
 
 	public function deleteFile($location, $folder, $filename)
 	{
+		if(!isset($this->isWritable[$location]))
+		{
+			$this->error = "It is not allowed to write into $location";
+
+			return false;
+		}
+
 		if($this->checkFile($location, $folder, $filename))
 		{
 			$filepath = $this->getFolderPath($location) . $folder . DIRECTORY_SEPARATOR . $filename;
-
+	
 			if(unlink($filepath))
 			{
 				return true;
 			}
 
 			$this->error = "We found the file but could not delete $filepath";
+
+			return false;
 		}
 
-		return false;
+		$this->error = "We did not find a file with that name";
+		
+		# we do not want to stop delete operation just because a file was not there, so return a message and true.
+		return true;
 	}
 
 	# used to sort the navigation / files 
@@ -280,11 +375,14 @@ class Storage
 		{
 			$oldPath = $this->contentFolder . $item->path;
 
-			if(@rename($oldPath, $newPath))
+			if(is_dir($oldPath))
 			{
-				return true;
+				if(@rename($oldPath, $newPath))
+				{
+					return true;
+				}
+				return false;
 			}
-			return false;
 		}
 		
 		# create old path but without filetype
@@ -329,6 +427,13 @@ class Storage
 
 	public function updateYaml($location, $folder, $filename, $contentArray)
 	{
+		if(!isset($this->isWritable[$location]))
+		{
+			$this->error = "It is not allowed to write into $location";
+
+			return false;
+		}
+
 		$yaml = \Symfony\Component\Yaml\Yaml::dump($contentArray,6);
 		if($this->writeFile($location, $folder, $filename, $yaml))
 		{
@@ -539,6 +644,37 @@ class Storage
 		}
 
 		return false;
+	}
+
+	public function storeCustomImage($image, $extension, $imageName)
+	{
+		switch($extension)
+		{
+			case "png":
+				$storedImage = imagepng( $image, $this->customFolder . $imageName . '.png', 9 );
+				break;
+			case "gif":
+				$storedImage = imagegif( $image, $this->customFolder . $imageName . '.gif' );
+				break;
+			case "webp":
+				$storedImage = imagewebp( $image, $this->customFolder . $imageName . '.webp', 80);
+				break;
+			case "jpg":
+			case "jpeg":
+				$storedImage = imagejpeg( $image, $this->customFolder . $imageName . '.' . $extension, 80);
+				break;
+			default:
+				$storedImage = false;
+		}
+
+		if(!$storedImage)
+		{
+			$this->errors[] = "Could not store the custom size of $imageName";
+
+			return false;
+		}
+
+		return true;
 	}
 
 	public function deleteImage($name)

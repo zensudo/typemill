@@ -7,7 +7,7 @@
 * DONE: Migrate from backend to frontend with vue and api
 * DONE: Redesign
 * DONE: License feature
-* ToDo: Enhance with plugins
+* DONE: Enhance with plugins
 
 ## Visual Editor
 
@@ -26,9 +26,6 @@
 * DONE: disable enable 
 * DONE: Add load sign (from navigation)
 * DONE: File is not published from tmp to media/files if you save the block.
-* ToDo: Customfields not styled yet.
-* ToDo: Warn if open another block
-* ToDo: finish youtube component
 
 ## Raw Editor
 
@@ -40,8 +37,6 @@
 * DONE: Refactor and redesign
 * DONE: fix status in navigation
 * DONE: refresh navigation after changes
-* ToDo: fix error messages
-* ToDo: Wrong frontend navigation if unpublished pages
 
 ## Publish Controller
 
@@ -90,27 +85,39 @@
 
 ## Open tasks
 
+* DONE: Sitemap and ping
+* DONE: Version check
+* DONE: Proxy support
+* DONE: SVG checker: https://github.com/TribalSystems/SVG-Sanitizer
+* DONE: Backend form builder
+* DONE: Image generation on the fly
+* DONE: Delete folder in base level
+* Make folder delete easier with glob or scandir
+* Handle formdata centrally ???
+* Markdown secure rendering
 * Responsive design
-* Backend form builder
-* Proxy support
-* Image generation on the fly
-* Sitemap and ping
 * Captcha integration
+* Fix error api systemnavi
+* Reference feature
+* Typemill Utilities
 * Clear cache
 * Show security Log
-* Reference feature
-* SVG checker
-* Markdown secure rendering
-* Typemill Utilities
-* Version check
 * User search only for +10 users
-* Fix error api systemnavi
+* fix error messages
+* Wrong frontend navigation if unpublished pages
+* Customfields not styled yet.
+* Warn if open another block
+* finish youtube component
+* Solution for logo and favicon
 
 ## Cleanups:
 
-* Events
+* DONE: Events
 * Error messages
 * Translations
+* https://stackoverflow.com/questions/15041608/searching-all-files-in-folder-for-strings
+* https://github.com/skfaisal93/AnyWhereInFiles/blob/master/anywhereinfiles-1.4.php
+* https://github.com/stephenhodgkiss/extract-translation-text-from-php-js
 
 ## Info: Select userroles
 
@@ -124,4 +131,9 @@
 * On activation in apiControllerExtension. It checks the license in yaml.
 * In plugin php code with setPremiumLicense
 * In static plugins, it checks manual premium list and method setPremiumLicense and more 
+
+## Plugins
+
+* MAKER: Rebuild search
+* MAKER: Rebuild contactform with shortcode
 

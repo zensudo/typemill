@@ -9,7 +9,14 @@ use Typemill\Models\StorageWrapper;
 use Typemill\Models\Validation;
 use Typemill\Models\Navigation;
 use Typemill\Models\Content;
+use Typemill\Models\Meta;
+use Typemill\Models\Sitemap;
 use Typemill\Static\Slug;
+use Typemill\Events\OnPagePublished;
+use Typemill\Events\OnPageUnpublished;
+use Typemill\Events\OnPageDeleted;
+use Typemill\Events\OnPageSorted;
+use Typemill\Events\OnPageRenamed;
 
 class ControllerApiAuthorArticle extends Controller
 {
@@ -52,9 +59,17 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 	    # publish content
-		$content 			= new Content($urlinfo['baseurl']);
+		$content 			= new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 		$draftMarkdown  	= $content->getDraftMarkdown($item);
-		$content->publishMarkdown($item, $draftMarkdown);
+		$publish 			= $content->publishMarkdown($item, $draftMarkdown);
+		if($publish !== true)
+		{
+			$response->getBody()->write(json_encode([
+				'message' => $publish,
+			]));
+
+			return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+		}
 
 		# refresh navigation and item
 	    $navigation->clearNavigation();
@@ -62,25 +77,29 @@ class ControllerApiAuthorArticle extends Controller
 		$draftNavigation 	= $navigation->setActiveNaviItems($draftNavigation, $item->keyPathArray);
 		$item 				= $navigation->getItemWithKeyPath($draftNavigation, $item->keyPathArray);
 
+		$sitemap 			= new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
+
+		# META is important e.g. for newsletter, so send it, too
+		$meta 				= new Meta();
+		$metadata  			= $meta->getMetaData($item);
+		$metadata 			= $meta->addMetaDefaults($metadata, $item, $this->settings['author']);
+#		$metadata 			= $meta->addMetaTitleDescription($metadata, $item, $markdownArray);
+
+		# dispatch event, e.g. send newsletter and more
+		$data = [
+			'markdown' 	=> $draftMarkdown, 
+			'item' 		=> $item,
+			'meta'		=> $metadata
+		];
+		$this->c->get('dispatcher')->dispatch(new OnPagePublished($data), 'onPagePublished');
+
 		$response->getBody()->write(json_encode([
 			'navigation'	=> $draftNavigation,
 			'item'			=> $item
 		]));
 
 		return $response->withHeader('Content-Type', 'application/json');
-
-/*
-		# update the sitemap
-		$this->updateSitemap($ping = true);
-
-		# complete the page meta if title or description not set
-		$writeMeta = new WriteMeta();
-		$meta = $writeMeta->completePageMeta($this->content, $this->settings, $this->item);
-
-		# dispatch event
-		$page = ['content' => $this->content, 'meta' => $meta, 'item' => $this->item];
-		$page = $this->c->dispatcher->dispatch('onPagePublished', new OnPagePublished($page))->getData();
-*/
 	}
 
 	public function unpublishArticle(Request $request, Response $response, $args)
@@ -122,7 +141,7 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 	    # publish content
-		$content 			= new Content($urlinfo['baseurl']);
+		$content 			= new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 		$draftMarkdown  	= $content->getDraftMarkdown($item);
 		$content->unpublishMarkdown($item, $draftMarkdown);
 
@@ -132,6 +151,9 @@ class ControllerApiAuthorArticle extends Controller
 		$draftNavigation 	= $navigation->setActiveNaviItems($draftNavigation, $item->keyPathArray);
 		$item 				= $navigation->getItemWithKeyPath($draftNavigation, $item->keyPathArray);
 		
+		$sitemap 			= new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
+
 		# check if it is a folder and if the folder has published pages.
 		$message = false;
 		if($item->elementType == 'folder' && isset($item->folderContent))
@@ -144,6 +166,9 @@ class ControllerApiAuthorArticle extends Controller
 				}
 			}
 		}
+
+		# dispatch event
+		$this->c->get('dispatcher')->dispatch(new OnPageUnpublished($item), 'onPageUnpublished');
 
 		$response->getBody()->write(json_encode([
 			'message'		=> $message,
@@ -193,7 +218,7 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 	    # save draft content
-		$content 			= new Content($urlinfo['baseurl']);
+		$content 			= new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 		$markdown 			= $params['title'] . PHP_EOL . PHP_EOL . $params['body'];
 		$markdownArray 		= $content->markdownTextToArray($markdown);
 		$content->saveDraftMarkdown($item, $markdownArray);
@@ -256,7 +281,7 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 	    # save draft content
-		$content 			= new Content($urlinfo['baseurl']);
+		$content 			= new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 		$markdown 			= $params['title'] . PHP_EOL . PHP_EOL . $params['body'];
 		$markdownArray 		= $content->markdownTextToArray($markdown);
 		$content->publishMarkdown($item, $markdownArray);
@@ -266,10 +291,27 @@ class ControllerApiAuthorArticle extends Controller
 		$draftNavigation 	= $navigation->getDraftNavigation($urlinfo, $this->settings['langattr']);
 		$draftNavigation 	= $navigation->setActiveNaviItems($draftNavigation, $item->keyPathArray);
 		$item 				= $navigation->getItemWithKeyPath($draftNavigation, $item->keyPathArray);
+
+		$sitemap 			= new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
 		
 		# refresh content
 		$draftMarkdown  	= $content->getDraftMarkdown($item);
 		$draftMarkdownHtml	= $content->addDraftHtml($draftMarkdown);
+
+		# META is important e.g. for newsletter, so send it, too
+		$meta 				= new Meta();
+		$metadata  			= $meta->getMetaData($item);
+		$metadata 			= $meta->addMetaDefaults($metadata, $item, $this->settings['author']);
+#		$metadata 			= $meta->addMetaTitleDescription($metadata, $item, $markdownArray);
+
+		# dispatch event, e.g. send newsletter and more
+		$data = [
+			'markdown' 	=> $draftMarkdown, 
+			'item' 		=> $item,
+			'meta'		=> $metadata
+		];
+		$this->c->get('dispatcher')->dispatch(new OnPagePublished($data), 'onPagePublished');
 
 		$response->getBody()->write(json_encode([
 			'item'			=> $item,
@@ -319,7 +361,7 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 	    # publish content
-		$content 			= new Content($urlinfo['baseurl']);
+		$content 			= new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 		$content->deleteDraft($item);
 
 		# refresh navigation and item
@@ -662,23 +704,30 @@ class ControllerApiAuthorArticle extends Controller
 		}
 
 		$navigation->renameItem($item, $params['slug']);
-
 		$navigation->clearNavigation();
-#		$this->updateSitemap($ping = true);
+		$draftNavigation = $navigation->getDraftNavigation($urlinfo, $this->settings['langattr']);
+
+		$sitemap = new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
 
 		# create the new url for redirects
 		$newUrlRel =  str_replace($item->slug, $params['slug'], $item->urlRelWoF);
 		$url = $urlinfo['baseurl'] . '/tm/content/' . $this->settings['editor'] . $newUrlRel;
-		
+
+		$data = [
+			'item' => $item,
+			'newUrl' => $newUrlRel
+		];
+		$this->c->get('dispatcher')->dispatch(new OnPageRenamed($data), 'onPageRenamed');
+
 		$response->getBody()->write(json_encode([
-			'navigation'	=> $navigation->getDraftNavigation($urlinfo, $this->settings['langattr']),
+			'navigation'	=> $draftNavigation,
 			'message'		=> '',
 			'url' 			=> $url
 		]));
 
 		return $response->withHeader('Content-Type', 'application/json');
 	}
-
 
 	public function sortArticle(Request $request, Response $response, $args)
 	{ 
@@ -749,9 +798,6 @@ class ControllerApiAuthorArticle extends Controller
 		# if the item has been moved within the same folder
 		if($params['parent_id_from'] == $params['parent_id_to'])
 		{
-			# no need to ping search engines
-			$ping = false;
-
 			# get key of item
 			$itemKey = end($itemKeyPath);
 			reset($itemKeyPath);
@@ -761,9 +807,6 @@ class ControllerApiAuthorArticle extends Controller
 		}
 		else
 		{
-			# let us ping search engines
-			$ping = true;
-
 			# an active file has been moved to another folder, so send new url with response
 			if($params['active'] == 'active')
 			{
@@ -799,9 +842,15 @@ class ControllerApiAuthorArticle extends Controller
 
 		# refresh navigation and item
 	    $navigation->clearNavigation();
+	    $draftNavigation = $navigation->getDraftNavigation($urlinfo, $langattr);
+
+		$sitemap = new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
+
+		$this->c->get('dispatcher')->dispatch(new OnPageSorted($params), 'onPageSorted');
 
 		$response->getBody()->write(json_encode([
-			'navigation'	=> $navigation->getDraftNavigation($urlinfo, $langattr),
+			'navigation'	=> $draftNavigation,
 			'message'		=> '',
 			'url' 			=> false
 		]));
@@ -847,26 +896,33 @@ class ControllerApiAuthorArticle extends Controller
 			return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
 		}
 
-		# check if it is a folder and if the folder has published pages.
-		if($item->elementType == 'folder' && isset($item->folderContent))
-		{
-			if(count($item->folderContent > 0))
-			{
-				$response->getBody()->write(json_encode([
-					'message' => 'This folder contains pages, please delete the pages first.',
-				]));
+		$content = new Content($urlinfo['baseurl'], $this->settings, $this->c->get('dispatcher'));
 
-				return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
-			}
+		# check if it is a folder and if the folder has published pages.
+		if($item->elementType == 'folder')
+		{
+			$result = $content->deleteFolder($item);
+		}
+		else
+		{
+			$result = $content->deletePage($item);
 		}
 
-	    # publish content
-		$content = new Content($urlinfo['baseurl']);
-		$content->deletePage($item);
+		if($result !== true)
+		{
+			$response->getBody()->write(json_encode([
+				'message' => $result,
+			]));
+
+			return $response->withHeader('Content-Type', 'application/json')->withStatus(422);			
+		}
 
 		# refresh navigation
 	    $navigation->clearNavigation();
 	    $draftNavigation = $navigation->getDraftNavigation($urlinfo, $this->settings['langattr']);
+
+		$sitemap = new Sitemap();
+		$sitemap->updateSitemap($draftNavigation, $urlinfo);
 
 		# check if it is a subfile or subfolder and set the redirect-url to the parent item
 		$url = $urlinfo['baseurl'] . '/tm/content/' . $this->settings['editor'];
@@ -883,6 +939,9 @@ class ControllerApiAuthorArticle extends Controller
 			}
 		}
 		
+		# dispatch event
+		$this->c->get('dispatcher')->dispatch(new OnPageDeleted($item), 'onPageDeleted');
+
 		$response->getBody()->write(json_encode([
 			'url' => $url
 		]));
